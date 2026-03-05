@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BudgetLite</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="3" width="20" height="18" rx="3"/>
+        <path d="M8 12h8M8 8h5M8 16h3"/>
+      </svg>
+      <span>BudgetLite</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a class="nav-item active" href="#" data-page="overview">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Overview
+      </a>
+      <a class="nav-item" href="#" data-page="transactions">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Transactions
+      </a>
+      <a class="nav-item" href="#" data-page="reports">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Reports
+      </a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <button class="dark-toggle" id="dark-toggle" title="Toggle dark mode">
+        <!-- Moon: shown in light mode -->
+        <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+        </svg>
+        <!-- Sun: shown in dark mode -->
+        <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <span class="dark-toggle-label">Dark mode</span>
+      </button>
+      <div class="sidebar-footer">
+        <div class="sidebar-footer-label">Data source</div>
+        <div class="sidebar-footer-value">transactions.csv</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main">
+
+    <!-- Shared topbar -->
+    <header class="topbar">
+      <div>
+        <h1 class="topbar-title" id="topbar-title">Overview</h1>
+        <p class="topbar-sub" id="topbar-sub">Loading…</p>
+      </div>
+      <div class="topbar-actions">
+        <select class="month-picker" id="month-picker" aria-label="Select month"></select>
+        <button class="btn-secondary" id="upload-trigger">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+          </svg>
+          Upload CSV
+        </button>
+        <button class="btn-primary" id="add-transaction-trigger">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Transaction
+        </button>
+      </div>
+    </header>
+
+    <!-- ── Overview page ──────────────────────────────────────────────────── -->
+    <div id="page-overview" class="page">
+
+      <section class="cards-grid">
+        <div class="card">
+          <div class="card-icon" style="--icon-bg:#6366f1">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+          </div>
+          <div class="card-body">
+            <p class="card-label">Total Expenses</p>
+            <p class="card-value" id="card-total">—</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-icon" style="--icon-bg:#22d3ee">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          </div>
+          <div class="card-body">
+            <p class="card-label">Transactions</p>
+            <p class="card-value" id="card-count">—</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-icon" style="--icon-bg:#f43f5e">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          </div>
+          <div class="card-body">
+            <p class="card-label">Highest Expense</p>
+            <p class="card-value" id="card-highest">—</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-icon" style="--icon-bg:#10b981">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+          <div class="card-body">
+            <p class="card-label">Avg Daily Expense</p>
+            <p class="card-value" id="card-avg">—</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="charts-grid">
+        <div class="chart-panel">
+          <h2 class="panel-title">Daily Expenses</h2>
+          <div class="chart-wrap">
+            <canvas id="bar-chart"></canvas>
+          </div>
+        </div>
+        <div class="chart-panel">
+          <h2 class="panel-title">Spending by Category</h2>
+          <div class="chart-wrap">
+            <canvas id="pie-chart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section class="table-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Recent Transactions</h2>
+          <button class="btn-link" id="view-all-btn">View all →</button>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th class="col-amount">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="transactions-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── Transactions page ───────────────────────────────────────────────── -->
+    <div id="page-transactions" class="page" hidden>
+
+      <div class="search-row">
+        <div class="search-wrap">
+          <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" class="search-input" id="search-input" placeholder="Search by description or category…" />
+        </div>
+        <button class="btn-secondary" id="export-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+          Export CSV
+        </button>
+      </div>
+
+      <section class="table-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">All Transactions</h2>
+          <span class="panel-count" id="tx-all-count"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th class="col-amount">Amount</th>
+                <th class="col-actions"></th>
+              </tr>
+            </thead>
+            <tbody id="all-transactions-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── Reports page ────────────────────────────────────────────────────── -->
+    <div id="page-reports" class="page" hidden>
+      <div class="reports-grid">
+
+        <section class="report-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Budget Goals</h2>
+            <span class="panel-sub" id="budget-month-label">this month</span>
+          </div>
+          <div id="budget-goals-list" class="budget-goals-list">
+            <p class="empty-row">No transactions for this period.</p>
+          </div>
+        </section>
+
+        <section class="report-panel">
+          <h2 class="panel-title" style="margin-bottom:20px">Monthly Comparison</h2>
+          <div class="chart-wrap">
+            <canvas id="monthly-chart"></canvas>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── Add / Edit Transaction modal ───────────────────────────────────────── -->
+  <div class="modal-overlay" id="add-modal" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title" id="add-modal-title">Add Transaction</h3>
+        <button class="modal-close" id="add-modal-close" aria-label="Close">&#x2715;</button>
+      </div>
+      <form id="add-form" class="add-form" novalidate>
+        <input type="hidden" id="tx-editing-id" value="" />
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="tx-date">Date</label>
+            <input class="form-input" type="date" id="tx-date" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="tx-amount">Amount (₪)</label>
+            <input class="form-input" type="number" id="tx-amount" step="0.01" min="0" placeholder="0.00" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="tx-description">Description</label>
+          <input class="form-input" type="text" id="tx-description" placeholder="e.g. Grocery Store" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="tx-category">Category</label>
+          <input class="form-input" type="text" id="tx-category" list="category-list" placeholder="e.g. Food" required />
+          <datalist id="category-list"></datalist>
+        </div>
+        <div class="add-feedback" id="add-feedback"></div>
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" id="add-cancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="add-submit">Save Transaction</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Upload CSV modal ────────────────────────────────────────────────────── -->
+  <div class="modal-overlay" id="upload-modal" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">Upload Transactions CSV</h3>
+        <button class="modal-close" id="modal-close" aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="drop-zone" id="drop-zone">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+        </svg>
+        <p class="drop-title">Drag &amp; drop your CSV here</p>
+        <p class="drop-or">or</p>
+        <label class="btn-browse" for="csv-file-input">Browse file</label>
+        <input type="file" id="csv-file-input" accept=".csv" hidden />
+      </div>
+      <div class="upload-feedback" id="upload-feedback"></div>
+      <p class="upload-hint">New rows are <strong>merged</strong> with existing data — duplicates are skipped.</p>
+      <p class="upload-hint">Required columns: <code>date, description, amount, category</code></p>
+    </div>
+  </div>
+
+  <!-- ── Toast notifications ─────────────────────────────────────────────────── -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>
