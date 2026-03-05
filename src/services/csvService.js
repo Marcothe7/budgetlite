@@ -6,7 +6,7 @@ const chardet  = require('chardet');
 const { Readable } = require('stream');
 
 const CSV_PATH = path.join(__dirname, '..', '..', 'data', 'transactions.csv');
-const HEADER   = 'date,description,amount,category';
+const HEADER   = 'date,description,amount,category,type,recurring';
 
 // ── Encoding detection ────────────────────────────────────────────────────────
 
@@ -35,11 +35,16 @@ function escCsv(val) {
     ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function rowToCsv({ date, description, amount, category }) {
-  return [escCsv(date), escCsv(description), escCsv(amount), escCsv(category)].join(',');
+function rowToCsv({ date, description, amount, category, type = 'expense', recurring = false }) {
+  return [
+    escCsv(date), escCsv(description), escCsv(amount),
+    escCsv(category), escCsv(type), escCsv(recurring ? '1' : '0'),
+  ].join(',');
 }
 
 // ── Shared row parser ─────────────────────────────────────────────────────────
+// Handles both the old 4-column format (date,description,amount,category)
+// and the new 6-column format (+ type, recurring) — old rows default gracefully.
 
 function parseStream(source, assignIds = false) {
   return new Promise((resolve, reject) => {
@@ -55,6 +60,8 @@ function parseStream(source, assignIds = false) {
           description: row.description.trim(),
           amount,
           category:    row.category.trim(),
+          type:        ['income', 'expense'].includes(row.type?.trim()) ? row.type.trim() : 'expense',
+          recurring:   row.recurring === '1' || row.recurring === 'true',
         };
         if (assignIds) t.id = idx++;
         results.push(t);
@@ -83,8 +90,8 @@ function writeCsv(transactions) {
   fs.writeFileSync(CSV_PATH, lines.join('\n'), 'utf-8');
 }
 
-function appendTransaction({ date, description, amount, category }) {
-  const row = rowToCsv({ date, description, amount, category });
+function appendTransaction({ date, description, amount, category, type = 'expense', recurring = false }) {
+  const row = rowToCsv({ date, description, amount, category, type, recurring });
   fs.appendFileSync(CSV_PATH, '\n' + row, 'utf-8');
 }
 

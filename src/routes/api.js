@@ -25,9 +25,21 @@ function categoryColor(name) {
   return COLOR_PALETTE[hash % COLOR_PALETTE.length];
 }
 
-function filterByMonth(transactions, month) {
-  if (!month) return transactions;
-  return transactions.filter(t => t.date.startsWith(month));
+// Supports both ?month=YYYY-MM and ?from=YYYY-MM-DD&to=YYYY-MM-DD
+function filterByRange(transactions, query) {
+  if (query.from && query.to) {
+    return transactions.filter(t => t.date >= query.from && t.date <= query.to);
+  }
+  if (query.month) {
+    return transactions.filter(t => t.date.startsWith(query.month));
+  }
+  return transactions;
+}
+
+function getPrevMonth(monthStr) {
+  const [y, m] = monthStr.split('-').map(Number);
+  if (m === 1) return `${y - 1}-12`;
+  return `${y}-${String(m - 1).padStart(2, '0')}`;
 }
 
 function handleError(res, err) {
@@ -65,36 +77,50 @@ router.get('/months', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
-// ── GET /api/summary?month=YYYY-MM ────────────────────────────────────────────
+// ── GET /api/summary?month=YYYY-MM  or  ?from=&to= ───────────────────────────
 router.get('/summary', async (req, res) => {
   try {
-    const all  = await readTransactions();
-    const transactions = filterByMonth(all, req.query.month);
+    const all          = await readTransactions();
+    const transactions = filterByRange(all, req.query);
 
-    if (transactions.length === 0) {
-      return res.json({ totalExpenses: 0, transactionCount: 0, highestExpense: 0, avgDailyExpense: 0 });
+    const expenses = transactions.filter(t => t.type !== 'income');
+    const incomes  = transactions.filter(t => t.type === 'income');
+
+    const totalExpenses = +expenses.reduce((s, t) => s + t.amount, 0).toFixed(2);
+    const totalIncome   = +incomes.reduce((s, t) => s + t.amount, 0).toFixed(2);
+    const netBalance    = +(totalIncome - totalExpenses).toFixed(2);
+    const highest       = expenses.length ? +Math.max(...expenses.map(t => t.amount)).toFixed(2) : 0;
+    const days          = expenses.length ? new Set(expenses.map(t => t.date)).size : 1;
+    const avgDaily      = expenses.length ? +(totalExpenses / days).toFixed(2) : 0;
+
+    // Trend vs previous month (only when month filter is active)
+    let trend = null;
+    if (req.query.month) {
+      const prev     = getPrevMonth(req.query.month);
+      const prevTx   = all.filter(t => t.date.startsWith(prev));
+      const prevExp  = +prevTx.filter(t => t.type !== 'income').reduce((s, t) => s + t.amount, 0).toFixed(2);
+      const prevInc  = +prevTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0).toFixed(2);
+      const prevCnt  = prevTx.length;
+
+      trend = {
+        expenses: prevExp  > 0 ? +((totalExpenses - prevExp) / prevExp * 100).toFixed(1) : null,
+        income:   prevInc  > 0 ? +((totalIncome   - prevInc) / prevInc  * 100).toFixed(1) : null,
+        count:    prevCnt  > 0 ? +((transactions.length - prevCnt) / prevCnt * 100).toFixed(1) : null,
+      };
     }
 
-    const total   = transactions.reduce((s, t) => s + t.amount, 0);
-    const highest = Math.max(...transactions.map(t => t.amount));
-    const days    = new Set(transactions.map(t => t.date)).size;
-
-    res.json({
-      totalExpenses:    +total.toFixed(2),
-      transactionCount: transactions.length,
-      highestExpense:   +highest.toFixed(2),
-      avgDailyExpense:  +(total / days).toFixed(2),
-    });
+    res.json({ totalExpenses, totalIncome, netBalance, transactionCount: transactions.length, highestExpense: highest, avgDailyExpense: avgDaily, trend });
   } catch (err) { handleError(res, err); }
 });
 
-// ── GET /api/daily?month=YYYY-MM ──────────────────────────────────────────────
+// ── GET /api/daily?month=YYYY-MM  or  ?from=&to= ─────────────────────────────
 router.get('/daily', async (req, res) => {
   try {
-    const all  = await readTransactions();
-    const transactions = filterByMonth(all, req.query.month);
-    const map  = {};
-    transactions.forEach(t => { map[t.date] = (map[t.date] || 0) + t.amount; });
+    const all          = await readTransactions();
+    const transactions = filterByRange(all, req.query);
+    const map          = {};
+    transactions.filter(t => t.type !== 'income')
+      .forEach(t => { map[t.date] = (map[t.date] || 0) + t.amount; });
 
     const daily = Object.entries(map)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -104,13 +130,14 @@ router.get('/daily', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
-// ── GET /api/categories?month=YYYY-MM ─────────────────────────────────────────
+// ── GET /api/categories?month=YYYY-MM  or  ?from=&to= ────────────────────────
 router.get('/categories', async (req, res) => {
   try {
-    const all  = await readTransactions();
-    const transactions = filterByMonth(all, req.query.month);
-    const map  = {};
-    transactions.forEach(t => { map[t.category] = (map[t.category] || 0) + t.amount; });
+    const all          = await readTransactions();
+    const transactions = filterByRange(all, req.query);
+    const map          = {};
+    transactions.filter(t => t.type !== 'income')
+      .forEach(t => { map[t.category] = (map[t.category] || 0) + t.amount; });
 
     const categories = Object.entries(map).map(([category, amount]) => ({
       category,
@@ -122,24 +149,24 @@ router.get('/categories', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
-// ── GET /api/transactions?month=YYYY-MM ───────────────────────────────────────
+// ── GET /api/transactions?month=YYYY-MM  or  ?from=&to= ──────────────────────
 router.get('/transactions', async (req, res) => {
   try {
-    const all  = await readTransactions();
-    res.json(filterByMonth(all, req.query.month));
+    const all = await readTransactions();
+    res.json(filterByRange(all, req.query));
   } catch (err) { handleError(res, err); }
 });
 
 // ── POST /api/transactions ────────────────────────────────────────────────────
 router.post('/transactions', async (req, res) => {
-  const { date, description, amount, category } = req.body || {};
+  const { date, description, amount, category, type = 'expense', recurring = false } = req.body || {};
   if (!date || !description || !category) {
     return res.status(400).json({ error: 'date, description, and category are required.' });
   }
   const amt = parseFloat(amount);
   if (isNaN(amt)) return res.status(400).json({ error: 'amount must be a number.' });
   try {
-    appendTransaction({ date, description, amount: amt, category });
+    appendTransaction({ date, description, amount: amt, category, type, recurring: !!recurring });
     res.json({ success: true });
   } catch (err) { handleError(res, err); }
 });
@@ -158,14 +185,14 @@ router.delete('/transactions/:id', async (req, res) => {
 router.put('/transactions/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id.' });
-  const { date, description, amount, category } = req.body || {};
+  const { date, description, amount, category, type = 'expense', recurring = false } = req.body || {};
   if (!date || !description || !category) {
     return res.status(400).json({ error: 'date, description, and category are required.' });
   }
   const amt = parseFloat(amount);
   if (isNaN(amt)) return res.status(400).json({ error: 'amount must be a number.' });
   try {
-    await updateTransaction(id, { date, description, amount: amt, category });
+    await updateTransaction(id, { date, description, amount: amt, category, type, recurring: !!recurring });
     res.json({ success: true });
   } catch (err) { handleError(res, err); }
 });
@@ -188,7 +215,6 @@ router.post('/budgets', (req, res) => {
 });
 
 // ── POST /api/upload ──────────────────────────────────────────────────────────
-// Merges uploaded CSV with existing data — duplicates are skipped.
 router.post('/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file provided.' });
   if (!req.file.originalname.toLowerCase().endsWith('.csv')) {
