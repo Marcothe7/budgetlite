@@ -2,7 +2,7 @@
 
 A lightweight, personal budget dashboard built with **Node.js + Express** and **vanilla JavaScript**. Track expenses and income, set budget goals, and visualise spending trends — all from a single CSV file.
 
-![BudgetLite screenshot](https://via.placeholder.com/900x500?text=BudgetLite+Dashboard)
+🌐 **Live demo:** [budgetlite.vercel.app](https://budgetlite.vercel.app)
 
 ---
 
@@ -24,8 +24,8 @@ A lightweight, personal budget dashboard built with **Node.js + Express** and **
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/mini-budget-dashboard.git
-cd mini-budget-dashboard
+git clone https://github.com/Marcothe7/budgetlite.git
+cd budgetlite
 
 # 2. Install dependencies
 npm install
@@ -107,7 +107,7 @@ Or set environment variables instead of editing the file:
 
 ## Deploy to Vercel
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/mini-budget-dashboard)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/Marcothe7/budgetlite)
 
 **Or manually:**
 
@@ -124,7 +124,7 @@ Or set environment variables instead of editing the file:
 ## Project Structure
 
 ```
-mini-budget-dashboard/
+budgetlite/
 ├── data/
 │   ├── transactions.csv      ← your transaction data (replace with your own)
 │   └── budgets.json          ← monthly budget limits per category
