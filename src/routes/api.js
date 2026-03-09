@@ -2,9 +2,10 @@ const express = require('express');
 const fs      = require('fs');
 const path    = require('path');
 const multer  = require('multer');
+const config  = require('../config/app.config');
 const {
   readTransactions, parseCSVBuffer, appendTransaction,
-  deleteTransaction, updateTransaction, mergeTransactions, CSV_PATH,
+  deleteTransaction, updateTransaction, mergeTransactions, writeCsv, CSV_PATH,
 } = require('../services/csvService');
 
 const router = express.Router();
@@ -12,12 +13,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 const BUDGETS_PATH = path.join(__dirname, '..', '..', 'data', 'budgets.json');
 
-const COLOR_PALETTE = [
-  '#6366f1', '#22d3ee', '#f59e0b', '#10b981', '#f43f5e', '#8b5cf6',
-  '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#06b6d4', '#a855f7',
-  '#ef4444', '#3b82f6', '#eab308', '#22c55e', '#d946ef', '#0ea5e9',
-  '#fb923c', '#4ade80',
-];
+const COLOR_PALETTE = config.colorPalette;
 
 function categoryColor(name) {
   let hash = 0;
@@ -232,6 +228,26 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: `Invalid CSV: ${err.message}` });
   }
+});
+
+// ── GET /api/config ───────────────────────────────────────────────────────────
+router.get('/config', (req, res) => {
+  res.json({
+    appName:      config.appName,
+    currency:     config.currency,
+    colorPalette: config.colorPalette,
+  });
+});
+
+// ── PUT /api/categories/rename ────────────────────────────────────────────────
+router.put('/categories/rename', async (req, res) => {
+  const { from, to } = req.body || {};
+  if (!from || !to) return res.status(400).json({ error: 'from and to are required.' });
+  try {
+    const all = await readTransactions();
+    writeCsv(all.map(t => t.category === from ? { ...t, category: to } : t));
+    res.json({ ok: true });
+  } catch (err) { handleError(res, err); }
 });
 
 module.exports = router;

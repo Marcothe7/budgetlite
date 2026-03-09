@@ -4,6 +4,7 @@ const csv      = require('csv-parser');
 const iconv    = require('iconv-lite');
 const chardet  = require('chardet');
 const { Readable } = require('stream');
+const config   = require('../config/app.config');
 
 const CSV_PATH = path.join(__dirname, '..', '..', 'data', 'transactions.csv');
 const HEADER   = 'date,description,amount,category,type,recurring';
@@ -20,11 +21,27 @@ function decodeBuffer(buffer) {
 
 function normalizeDate(raw) {
   const s = raw.trim();
-  const ddmmyyyy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (ddmmyyyy) {
-    return `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`;
+  // DD/MM/YYYY (slashes, 4-digit year)
+  const a = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (a) return `${a[3]}-${a[2].padStart(2,'0')}-${a[1].padStart(2,'0')}`;
+  // DD.MM.YYYY (dots, 4-digit year)
+  const b = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (b) return `${b[3]}-${b[2].padStart(2,'0')}-${b[1].padStart(2,'0')}`;
+  // DD.MM.YY (dots, 2-digit year → 20YY)
+  const c = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2})$/);
+  if (c) return `20${c[3]}-${c[2].padStart(2,'0')}-${c[1].padStart(2,'0')}`;
+  return s; // YYYY-MM-DD passes through unchanged
+}
+
+// ── Category inference for rows with no category ──────────────────────────────
+// Rules are defined in src/config/app.config.js → categoryInferenceRules
+
+function inferCategory(desc) {
+  const d = (desc || '').toUpperCase();
+  for (const rule of config.categoryInferenceRules) {
+    if (d.includes(rule.keyword.toUpperCase())) return rule.category;
   }
-  return s;
+  return 'Uncategorized';
 }
 
 // ── CSV serialisation ─────────────────────────────────────────────────────────
@@ -54,12 +71,13 @@ function parseStream(source, assignIds = false) {
       .pipe(csv({ mapHeaders: ({ header }) => header.trim() }))
       .on('data', row => {
         const amount = parseFloat(row.amount);
-        if (!row.date || !row.description || isNaN(amount) || !row.category) return;
+        if (!row.date || !row.description || isNaN(amount)) return;
+        const rawCat = row.category?.trim() || '';
         const t = {
           date:        normalizeDate(row.date),
           description: row.description.trim(),
           amount,
-          category:    row.category.trim(),
+          category:    rawCat || inferCategory(row.description),
           type:        ['income', 'expense'].includes(row.type?.trim()) ? row.type.trim() : 'expense',
           recurring:   row.recurring === '1' || row.recurring === 'true',
         };

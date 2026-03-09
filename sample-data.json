@@ -1,0 +1,41 @@
+{
+  "_description": "This file shows the required data format. Copy it to data/transactions.csv (CSV format) to use your own data.",
+  "csvFormat": {
+    "filename": "data/transactions.csv",
+    "columns": ["date", "description", "amount", "category", "type", "recurring"],
+    "columnDetails": {
+      "date": "Required. Format: YYYY-MM-DD (also accepts DD/MM/YYYY and DD.MM.YY)",
+      "description": "Required. Free text, e.g. 'Grocery Store'",
+      "amount": "Required. Positive number, e.g. 84.50",
+      "category": "Optional. If empty, falls back to auto-inference rules in app.config.js",
+      "type": "Optional. 'expense' (default) or 'income'",
+      "recurring": "Optional. '1' = recurring monthly, '0' = one-time"
+    }
+  },
+  "csvExample": [
+    "date,description,amount,category,type,recurring",
+    "2026-01-01,Monthly Salary,3500.00,-,income,1",
+    "2026-01-05,Grocery Store,84.50,Food,expense,0",
+    "2026-01-08,Netflix Subscription,15.99,Entertainment,expense,1",
+    "2026-01-15,Restaurant Dinner,45.00,Dining,expense,0"
+  ],
+  "budgetFormat": {
+    "filename": "data/budgets.json",
+    "description": "JSON object mapping category names to monthly budget limits (numbers). Omit a category to show no limit.",
+    "example": {
+      "Food": 400,
+      "Dining": 200,
+      "Utilities": 150,
+      "Transport": 100,
+      "Entertainment": 80
+    }
+  },
+  "configOptions": {
+    "file": "src/config/app.config.js",
+    "orEnvironmentVariables": {
+      "APP_NAME": "Display name shown in browser tab and sidebar (default: BudgetLite)",
+      "CURRENCY": "Currency symbol prefixed to amounts (default: $)",
+      "PORT": "HTTP port (default: 3000)"
+    }
+  }
+}

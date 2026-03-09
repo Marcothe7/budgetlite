@@ -1,3 +1,14 @@
+// ── App config (loaded from /api/config on init) ──────────────────────────────
+let appConfig = { currency: '$', appName: 'BudgetLite', colorPalette: [] };
+
+/** Format a monetary amount using the loaded currency symbol. */
+function fmt(n, showPlus = false) {
+  const abs = `${appConfig.currency}${Math.abs(n).toFixed(2)}`;
+  if (showPlus && n >= 0) return `+${abs}`;
+  if (n < 0) return `-${abs}`;
+  return abs;
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentMonth     = null;
 let currentPage      = 'overview';
@@ -163,8 +174,13 @@ function initDateRangeFilter() {
 
   picker.addEventListener('change', async e => {
     if (e.target.value === 'custom') {
-      filterMode = 'custom';
-      wrap.hidden = false;
+      filterMode   = 'custom';
+      currentMonth = null;
+      customFrom   = '';
+      customTo     = '';
+      wrap.hidden  = false;
+      updateTopbarSub();
+      await loadCurrentPage();
     } else {
       filterMode   = 'month';
       currentMonth = e.target.value || null;
@@ -214,14 +230,14 @@ async function loadOverview(q) {
 }
 
 function renderSummaryCards(summary) {
-  document.getElementById('card-total').textContent  = `₪${summary.totalExpenses.toFixed(2)}`;
-  document.getElementById('card-income').textContent = `₪${summary.totalIncome.toFixed(2)}`;
+  document.getElementById('card-total').textContent  = fmt(summary.totalExpenses);
+  document.getElementById('card-income').textContent = fmt(summary.totalIncome);
   document.getElementById('card-count').textContent  = summary.transactionCount;
-  document.getElementById('card-avg').textContent    = `₪${summary.avgDailyExpense.toFixed(2)}`;
+  document.getElementById('card-avg').textContent    = fmt(summary.avgDailyExpense);
 
   const net = summary.netBalance;
   const netEl = document.getElementById('card-net');
-  netEl.textContent = (net >= 0 ? '+' : '') + `₪${net.toFixed(2)}`;
+  netEl.textContent = fmt(net, true);
   netEl.className = 'card-value ' + (net >= 0 ? 'positive' : 'negative');
 
   // Trend badges (only when monthly filter is active)
@@ -259,7 +275,7 @@ function renderTop5(transactions) {
         <div class="top5-desc">${escHtml(t.description)}</div>
         <div class="top5-cat">${escHtml(t.category)}</div>
       </div>
-      <div class="top5-amount">₪${t.amount.toFixed(2)}</div>
+      <div class="top5-amount">${fmt(t.amount)}</div>
     </li>`).join('');
 }
 
@@ -280,7 +296,7 @@ function renderRecentTable(transactions) {
       <td class="col-date">${formatDate(t.date)}</td>
       <td class="col-desc">${escHtml(t.description)}${t.recurring ? recurringIcon() : ''}</td>
       <td><span class="badge" style="--badge-color:${color}">${escHtml(t.category)}</span></td>
-      <td class="col-amount">₪${t.amount.toFixed(2)}</td>
+      <td class="col-amount">${fmt(t.amount)}</td>
     </tr>`;
   }).join('');
 }
@@ -298,7 +314,7 @@ function renderBarChart(daily) {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        y: { beginAtZero: true, grid: { color: cc.grid }, border: { display: false }, ticks: { callback: v => `₪${v}`, color: cc.tick, font: { size: 11 } } },
+        y: { beginAtZero: true, grid: { color: cc.grid }, border: { display: false }, ticks: { callback: v => fmt(v), color: cc.tick, font: { size: 11 } } },
         x: { grid: { display: false }, border: { display: false }, ticks: { color: cc.tick, font: { size: 11 } } },
       },
     },
@@ -318,7 +334,7 @@ function renderPieChart(categories) {
       responsive: true, maintainAspectRatio: false, cutout: '68%',
       plugins: {
         legend: { position: 'bottom', labels: { padding: 14, usePointStyle: true, pointStyleWidth: 8, font: { size: 12 }, color: cc.legend } },
-        tooltip: { callbacks: { label: ctx => ` ₪${ctx.parsed.toFixed(2)}` } },
+        tooltip: { callbacks: { label: ctx => ` ${fmt(ctx.parsed)}` } },
       },
     },
   });
@@ -381,8 +397,8 @@ function renderAllTransactionsTable(transactions) {
   tbody.innerHTML = transactions.map(t => {
     const color  = colorMap[t.category] || '#94a3b8';
     const amtHtml = t.type === 'income'
-      ? `<span class="income-amount">+₪${t.amount.toFixed(2)}</span>`
-      : `₪${t.amount.toFixed(2)}`;
+      ? `<span class="income-amount">${fmt(t.amount, true)}</span>`
+      : fmt(t.amount);
     return `<tr data-id="${t.id}">
       <td class="col-date">${formatDate(t.date)}</td>
       <td class="col-desc">${escHtml(t.description)}${t.recurring ? recurringIcon() : ''}</td>
@@ -416,9 +432,11 @@ function initTransactionActions() {
     const btn    = e.target.closest('[data-action]');
     const badge  = e.target.closest('.badge[data-cat]');
 
-    // Category filter via badge click
+    // One-click category switch via badge
     if (badge && !btn) {
-      setCategoryFilter(badge.dataset.cat);
+      e.stopPropagation();
+      const tr = badge.closest('tr');
+      if (tr) showCategoryDropdown(badge, parseInt(tr.dataset.id, 10));
       return;
     }
 
@@ -557,10 +575,10 @@ function renderBudgetGoals(categories) {
               ${escHtml(cat.category)}
             </div>
             <div class="budget-goal-amounts">
-              <span class="budget-spent">₪${cat.amount.toFixed(2)}</span>
+              <span class="budget-spent">${fmt(cat.amount)}</span>
               <span>/</span>
               <span class="budget-limit-wrap">
-                <span class="budget-currency">₪</span>
+                <span class="budget-currency">${appConfig.currency}</span>
                 <input class="budget-input" type="number" min="0" step="10"
                   placeholder="∞" value="${hasLimit ? limit : ''}"
                   data-category="${escHtml(cat.category)}" />
@@ -614,7 +632,7 @@ function renderMonthlyChart(allDaily) {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        y: { beginAtZero: true, grid: { color: cc.grid }, border: { display: false }, ticks: { callback: v => `₪${v}`, color: cc.tick, font: { size: 11 } } },
+        y: { beginAtZero: true, grid: { color: cc.grid }, border: { display: false }, ticks: { callback: v => fmt(v), color: cc.tick, font: { size: 11 } } },
         x: { grid: { display: false }, border: { display: false }, ticks: { color: cc.tick, font: { size: 11 } } },
       },
     },
@@ -650,7 +668,7 @@ function renderCategoryComparisonChart(currCats, prevCats) {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { position: 'bottom', labels: { padding: 14, usePointStyle: true, font: { size: 12 }, color: cc.legend } } },
       scales: {
-        y: { beginAtZero: true, grid: { color: cc.grid }, border: { display: false }, ticks: { callback: v => `₪${v}`, color: cc.tick, font: { size: 11 } } },
+        y: { beginAtZero: true, grid: { color: cc.grid }, border: { display: false }, ticks: { callback: v => fmt(v), color: cc.tick, font: { size: 11 } } },
         x: { grid: { display: false }, border: { display: false }, ticks: { color: cc.tick, font: { size: 11 }, maxRotation: 30 } },
       },
     },
@@ -679,10 +697,10 @@ async function printReport() {
     const lim  = bud[c.category];
     const pct  = lim ? Math.round((c.amount / lim) * 100) : null;
     const bar  = lim ? `<div style="height:6px;background:#e2e8f0;border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.min(pct,100)}%;background:${c.amount > lim ? '#f43f5e' : c.color};border-radius:4px"></div></div>` : '';
-    const limStr = lim ? `₪${lim.toFixed(2)}` : 'No limit';
+    const limStr = lim ? fmt(lim) : 'No limit';
     return `<tr>
       <td style="padding:8px 6px;border-bottom:1px solid #f1f5f9">${escHtml(c.category)}</td>
-      <td style="padding:8px 6px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600">₪${c.amount.toFixed(2)}</td>
+      <td style="padding:8px 6px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600">${fmt(c.amount)}</td>
       <td style="padding:8px 6px;border-bottom:1px solid #f1f5f9;text-align:right;color:#64748b">${limStr}</td>
       <td style="padding:8px 6px;border-bottom:1px solid #f1f5f9;width:120px">${bar}${pct != null ? `<span style="font-size:11px;color:#64748b">${pct}%</span>` : ''}</td>
     </tr>`;
@@ -693,11 +711,11 @@ async function printReport() {
       <td style="padding:7px 6px;border-bottom:1px solid #f1f5f9;color:#64748b">${formatDate(t.date)}</td>
       <td style="padding:7px 6px;border-bottom:1px solid #f1f5f9">${escHtml(t.description)}${t.recurring ? ' ↺' : ''}</td>
       <td style="padding:7px 6px;border-bottom:1px solid #f1f5f9">${escHtml(t.category)}</td>
-      <td style="padding:7px 6px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;color:${t.type === 'income' ? '#10b981' : '#0f172a'}">${t.type === 'income' ? '+' : ''}₪${t.amount.toFixed(2)}</td>
+      <td style="padding:7px 6px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;color:${t.type === 'income' ? '#10b981' : '#0f172a'}">${fmt(t.amount, t.type === 'income')}</td>
     </tr>`
   ).join('');
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>BudgetLite Report – ${label}</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${appConfig.appName} Report – ${label}</title>
   <style>
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a;margin:0;padding:40px;font-size:14px}
     h1{font-size:26px;font-weight:700;margin-bottom:4px}
@@ -713,13 +731,13 @@ async function printReport() {
     .positive{color:#10b981}.negative{color:#f43f5e}
     @media print{@page{margin:20mm}}
   </style></head><body>
-  <h1>BudgetLite Monthly Report</h1>
+  <h1>${appConfig.appName} Monthly Report</h1>
   <p class="sub">${label} &bull; Generated ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
 
   <div class="cards">
-    <div class="card"><div class="card-lbl">Total Expenses</div><div class="card-val">₪${summary.totalExpenses.toFixed(2)}</div></div>
-    <div class="card"><div class="card-lbl">Total Income</div><div class="card-val positive">₪${summary.totalIncome.toFixed(2)}</div></div>
-    <div class="card"><div class="card-lbl">Net Balance</div><div class="card-val ${summary.netBalance >= 0 ? 'positive' : 'negative'}">${summary.netBalance >= 0 ? '+' : ''}₪${summary.netBalance.toFixed(2)}</div></div>
+    <div class="card"><div class="card-lbl">Total Expenses</div><div class="card-val">${fmt(summary.totalExpenses)}</div></div>
+    <div class="card"><div class="card-lbl">Total Income</div><div class="card-val positive">${fmt(summary.totalIncome)}</div></div>
+    <div class="card"><div class="card-lbl">Net Balance</div><div class="card-val ${summary.netBalance >= 0 ? 'positive' : 'negative'}">${fmt(summary.netBalance, true)}</div></div>
     <div class="card"><div class="card-lbl">Transactions</div><div class="card-val">${summary.transactionCount}</div></div>
   </div>
 
@@ -729,7 +747,7 @@ async function printReport() {
 
   <h2>Top 5 Expenses</h2>
   <table><thead><tr><th>#</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
-  <tbody>${top5.map((t, i) => `<tr><td style="padding:7px 6px;border-bottom:1px solid #f1f5f9;color:#64748b;font-weight:700">${i + 1}</td><td style="padding:7px 6px;border-bottom:1px solid #f1f5f9">${escHtml(t.description)}</td><td style="padding:7px 6px;border-bottom:1px solid #f1f5f9;color:#64748b">${escHtml(t.category)}</td><td style="padding:7px 6px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:700">₪${t.amount.toFixed(2)}</td></tr>`).join('')}</tbody></table>
+  <tbody>${top5.map((t, i) => `<tr><td style="padding:7px 6px;border-bottom:1px solid #f1f5f9;color:#64748b;font-weight:700">${i + 1}</td><td style="padding:7px 6px;border-bottom:1px solid #f1f5f9">${escHtml(t.description)}</td><td style="padding:7px 6px;border-bottom:1px solid #f1f5f9;color:#64748b">${escHtml(t.category)}</td><td style="padding:7px 6px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:700">${fmt(t.amount)}</td></tr>`).join('')}</tbody></table>
 
   <h2>Transactions (${transactions.length > 50 ? 'first 50 of ' + transactions.length : transactions.length})</h2>
   <table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
@@ -756,16 +774,22 @@ function openEditModal(tx) {
   document.getElementById('add-modal-title').textContent = 'Edit Transaction';
   document.getElementById('add-submit').textContent      = 'Save Changes';
   document.getElementById('tx-editing-id').value         = tx.id;
-  document.getElementById('tx-date').value               = tx.date;
   document.getElementById('tx-amount').value             = tx.amount;
   document.getElementById('tx-description').value        = tx.description;
   document.getElementById('tx-category').value           = tx.category;
   document.getElementById('tx-recurring').checked        = !!tx.recurring;
 
-  // Set type toggle
+  // Set type toggle first (affects date field type)
   const type = tx.type || 'expense';
   document.getElementById('tx-type').value = type;
   document.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+
+  // Set date and category row based on type
+  const isIncome  = type === 'income';
+  const dateInput = document.getElementById('tx-date');
+  dateInput.type  = isIncome ? 'month' : 'date';
+  dateInput.value = isIncome ? tx.date.slice(0, 7) : tx.date;
+  document.getElementById('tx-cat-row').hidden = isIncome;
 
   setAddFeedback('', '');
   document.getElementById('add-modal').hidden = false;
@@ -784,7 +808,12 @@ function initAddModal() {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      document.getElementById('tx-type').value = btn.dataset.type;
+      const type = btn.dataset.type;
+      document.getElementById('tx-type').value = type;
+      const isIncome = type === 'income';
+      dateInput.type = isIncome ? 'month' : 'date';
+      document.getElementById('tx-cat-row').hidden = isIncome;
+      if (!isIncome && !dateInput.value) dateInput.value = new Date().toISOString().slice(0, 10);
     });
   });
 
@@ -793,7 +822,9 @@ function initAddModal() {
     document.getElementById('tx-editing-id').value = '';
     document.getElementById('tx-type').value = 'expense';
     document.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('active', b.dataset.type === 'expense'));
+    dateInput.type  = 'date';
     dateInput.value = new Date().toISOString().slice(0, 10);
+    document.getElementById('tx-cat-row').hidden = false;
     setAddFeedback('', '');
   };
 
@@ -814,18 +845,23 @@ function initAddModal() {
   form.addEventListener('submit', async e => {
     e.preventDefault();
     const editingId   = document.getElementById('tx-editing-id').value;
-    const date        = document.getElementById('tx-date').value;
+    const rawDate     = document.getElementById('tx-date').value;
     const description = document.getElementById('tx-description').value.trim();
     const amount      = document.getElementById('tx-amount').value;
     const category    = document.getElementById('tx-category').value.trim();
     const type        = document.getElementById('tx-type').value;
     const recurring   = document.getElementById('tx-recurring').checked;
 
-    if (!date || !description || !amount || !category) {
+    // Income only needs month + amount + description
+    if (!rawDate || !description || !amount || (type !== 'income' && !category)) {
       setAddFeedback('Please fill in all fields.', 'error');
       return;
     }
     setAddFeedback('Saving…', 'info');
+
+    // Expand YYYY-MM → YYYY-MM-01 for income month picker
+    const date          = (type === 'income' && rawDate.length === 7) ? rawDate + '-01' : rawDate;
+    const finalCategory = type === 'income' ? (category || '-') : category;
 
     const isEdit = editingId !== '';
     const url    = isEdit ? `/api/transactions/${editingId}` : '/api/transactions';
@@ -835,7 +871,7 @@ function initAddModal() {
       const res  = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, description, amount: parseFloat(amount), category, type, recurring }),
+        body: JSON.stringify({ date, description, amount: parseFloat(amount), category: finalCategory, type, recurring }),
       });
       const data = await res.json();
       if (!res.ok) { setAddFeedback(data.error, 'error'); return; }
@@ -925,6 +961,209 @@ function setAddFeedback(msg, type) {
   el.className   = `add-feedback ${type}`;
 }
 
+// ── Category color helper (mirrors server-side hash) ──────────────────────────
+
+// CAT_PALETTE is loaded from /api/config into appConfig.colorPalette at init
+function getCatColor(name) {
+  const palette = appConfig.colorPalette.length ? appConfig.colorPalette : [
+    '#6366f1','#22d3ee','#f59e0b','#10b981','#f43f5e','#8b5cf6',
+    '#ec4899','#14b8a6','#f97316','#84cc16','#06b6d4','#a855f7',
+    '#ef4444','#3b82f6','#eab308','#22c55e','#d946ef','#0ea5e9',
+    '#fb923c','#4ade80',
+  ];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return palette[h % palette.length];
+}
+
+// ── Inline category dropdown ───────────────────────────────────────────────────
+
+function initCategoryDropdown() {
+  const el = document.createElement('div');
+  el.id = 'cat-dropdown';
+  el.className = 'cat-dropdown';
+  el.hidden = true;
+  document.body.appendChild(el);
+
+  document.addEventListener('click', e => {
+    const dropdown = document.getElementById('cat-dropdown');
+    if (dropdown && !dropdown.hidden && !dropdown.contains(e.target)) {
+      dropdown.hidden = true;
+    }
+  });
+}
+
+function showCategoryDropdown(badge, txId) {
+  const dropdown = document.getElementById('cat-dropdown');
+  if (!dropdown) return;
+  const currentCat = badge.dataset.cat;
+  const cats = Object.keys(colorMap).sort();
+
+  dropdown.innerHTML = `
+    <div class="cat-dropdown-list">
+      ${cats.map(cat => `
+        <div class="cat-dropdown-item${cat === currentCat ? ' cat-active' : ''}" data-cat="${escHtml(cat)}">
+          <span class="cat-dot" style="background:${colorMap[cat] || getCatColor(cat)}"></span>
+          <span class="cat-dropdown-label">${escHtml(cat)}</span>
+          ${cat === currentCat ? '<svg class="cat-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
+        </div>`).join('')}
+    </div>
+    <div class="cat-dropdown-new">
+      <input class="cat-dropdown-input" placeholder="New category…" autocomplete="off" />
+    </div>`;
+
+  // Position near badge
+  const rect = badge.getBoundingClientRect();
+  dropdown.style.left = `${Math.min(rect.left, window.innerWidth - 215)}px`;
+  dropdown.style.top  = (window.innerHeight - rect.bottom > 160)
+    ? `${rect.bottom + 4}px`
+    : `${rect.top - Math.min(cats.length * 37 + 60, 300) - 4}px`;
+  dropdown.hidden = false;
+
+  // Item clicks
+  dropdown.querySelectorAll('.cat-dropdown-item').forEach(item => {
+    item.addEventListener('click', async e => {
+      e.stopPropagation();
+      const newCat = item.dataset.cat;
+      dropdown.hidden = true;
+      if (newCat !== currentCat) await changeTxCategory(txId, newCat, badge);
+    });
+  });
+
+  // New category input
+  const input = dropdown.querySelector('.cat-dropdown-input');
+  input.addEventListener('click', e => e.stopPropagation());
+  input.addEventListener('keydown', async e => {
+    if (e.key === 'Enter') {
+      const newCat = input.value.trim();
+      if (newCat) { dropdown.hidden = true; await changeTxCategory(txId, newCat, badge); }
+    }
+    if (e.key === 'Escape') dropdown.hidden = true;
+  });
+}
+
+async function changeTxCategory(txId, newCat, badge) {
+  const tx = allTransactions.find(t => t.id === txId);
+  if (!tx) return;
+  try {
+    await apiUpdateTx(txId, {
+      date: tx.date, description: tx.description, amount: tx.amount,
+      category: newCat, type: tx.type || 'expense', recurring: !!tx.recurring,
+    });
+    tx.category = newCat;
+    const color = colorMap[newCat] || getCatColor(newCat);
+    colorMap[newCat] = color;
+    badge.style.setProperty('--badge-color', color);
+    badge.dataset.cat = newCat;
+    badge.textContent = newCat;
+    showToast('Category updated', 'success');
+    if (categoryFilter) applyFilter();
+  } catch { showToast('Failed to update category', 'error'); }
+}
+
+// ── Manage categories modal ────────────────────────────────────────────────────
+
+async function openManageCategoriesModal() {
+  document.getElementById('manage-cat-modal').hidden = false;
+  await renderCategoryManagement();
+}
+
+async function renderCategoryManagement() {
+  const content = document.getElementById('manage-cat-content');
+  content.innerHTML = '<p style="color:var(--muted);text-align:center;padding:20px 0">Loading…</p>';
+  try {
+    const [allTx, allCats] = await Promise.all([
+      fetch('/api/transactions').then(r => r.json()),
+      fetch('/api/categories').then(r => r.json()),
+    ]);
+    const catColors = Object.fromEntries(allCats.map(c => [c.category, c.color]));
+    const counts = {};
+    allTx.filter(t => t.type !== 'income').forEach(t => {
+      counts[t.category] = (counts[t.category] || 0) + 1;
+    });
+    const cats = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    if (!cats.length) {
+      content.innerHTML = '<p class="empty-row">No categories found.</p>';
+      return;
+    }
+    const allCatNames = cats.map(([c]) => c);
+    content.innerHTML = `<div class="cat-mgmt-list">${cats.map(([cat, count]) => {
+      const color = catColors[cat] || getCatColor(cat);
+      return `<div class="cat-mgmt-row" data-cat="${escHtml(cat)}">
+        <span class="cat-dot" style="background:${color}"></span>
+        <span class="cat-mgmt-name">${escHtml(cat)}</span>
+        <span class="cat-mgmt-count">${count} tx</span>
+        <div class="cat-mgmt-actions">
+          <button class="btn-sm cat-rename-btn" data-cat="${escHtml(cat)}">Rename</button>
+          <button class="btn-sm danger cat-delete-btn" data-cat="${escHtml(cat)}">Delete</button>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+
+    content.querySelectorAll('.cat-rename-btn').forEach(btn => {
+      btn.addEventListener('click', () => startRename(btn.dataset.cat));
+    });
+    content.querySelectorAll('.cat-delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => startDelete(btn.dataset.cat, allCatNames));
+    });
+  } catch {
+    content.innerHTML = '<p class="empty-row" style="color:#f43f5e">Failed to load categories.</p>';
+  }
+}
+
+function startRename(cat) {
+  const row    = document.querySelector(`.cat-mgmt-row[data-cat="${CSS.escape(cat)}"]`);
+  if (!row) return;
+  const nameEl = row.querySelector('.cat-mgmt-name');
+  const orig   = cat;
+  nameEl.innerHTML = `<input class="cat-rename-input" value="${escHtml(orig)}" />`;
+  const input = nameEl.querySelector('input');
+  input.focus(); input.select();
+  let confirmed = false;
+  const confirm = async () => {
+    if (confirmed) return; confirmed = true;
+    const val = input.value.trim();
+    if (val && val !== orig) await doRenameCategory(orig, val);
+    else await renderCategoryManagement();
+  };
+  input.addEventListener('blur', confirm);
+  input.addEventListener('keydown', async e => {
+    if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { confirmed = true; await renderCategoryManagement(); }
+  });
+}
+
+async function doRenameCategory(from, to) {
+  try {
+    await fetch('/api/categories/rename', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to }),
+    });
+    showToast(`Renamed to "${to}"`, 'success');
+    await renderCategoryManagement();
+    await loadCurrentPage();
+  } catch { showToast('Rename failed', 'error'); }
+}
+
+function startDelete(cat, allCats) {
+  const row   = document.querySelector(`.cat-mgmt-row[data-cat="${CSS.escape(cat)}"]`);
+  if (!row) return;
+  const actEl = row.querySelector('.cat-mgmt-actions');
+  const others = allCats.filter(c => c !== cat);
+  if (!others.length) {
+    actEl.innerHTML = `<span style="font-size:12px;color:var(--muted)">Last category</span>`;
+    return;
+  }
+  actEl.innerHTML = `
+    <select class="cat-reassign-select">${others.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('')}</select>
+    <button class="btn-sm danger cat-confirm-del">Move &amp; Delete</button>
+    <button class="btn-sm cat-cancel-del">✕</button>`;
+  actEl.querySelector('.cat-confirm-del').addEventListener('click', async () => {
+    await doRenameCategory(cat, actEl.querySelector('.cat-reassign-select').value);
+  });
+  actEl.querySelector('.cat-cancel-del').addEventListener('click', () => renderCategoryManagement());
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -941,6 +1180,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Print report
   document.getElementById('print-report-btn').addEventListener('click', printReport);
 
+  // Manage categories modal
+  document.getElementById('manage-cat-btn').addEventListener('click', openManageCategoriesModal);
+  document.getElementById('manage-cat-close').addEventListener('click', () => {
+    document.getElementById('manage-cat-modal').hidden = true;
+  });
+  document.getElementById('manage-cat-modal').addEventListener('click', e => {
+    if (e.target === document.getElementById('manage-cat-modal')) {
+      document.getElementById('manage-cat-modal').hidden = true;
+    }
+  });
+
+  // Load app config (currency, appName, colorPalette)
+  try {
+    appConfig = await fetch('/api/config').then(r => r.json());
+    document.title = appConfig.appName;
+    document.querySelector('.sidebar-logo span').textContent = appConfig.appName;
+    const amtLabel = document.querySelector('label[for="tx-amount"]');
+    if (amtLabel) amtLabel.textContent = `Amount (${appConfig.currency})`;
+  } catch { /* keep defaults */ }
+
   // Load months
   knownMonths = await fetchMonths();
   populateMonthPicker(knownMonths);
@@ -950,10 +1209,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Date range filter init
   initDateRangeFilter();
 
-  // Modals
+  // Modals & interactions
   initAddModal();
   initUploadModal();
   initTransactionActions();
+  initCategoryDropdown();
 
   // Initial load
   await loadOverview(buildQuery());

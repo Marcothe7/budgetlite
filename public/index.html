@@ -209,6 +209,13 @@
             <button class="chip-close" id="category-chip-clear" title="Clear filter">✕</button>
           </span>
         </div>
+        <button class="btn-secondary" id="manage-cat-btn" title="Manage categories">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+            <line x1="7" y1="7" x2="7.01" y2="7"/>
+          </svg>
+          Categories
+        </button>
         <button class="btn-secondary" id="export-btn">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
@@ -325,9 +332,9 @@
           <label class="form-label" for="tx-description">Description</label>
           <input class="form-input" type="text" id="tx-description" placeholder="e.g. Grocery Store" required />
         </div>
-        <div class="form-group">
+        <div class="form-group" id="tx-cat-row">
           <label class="form-label" for="tx-category">Category</label>
-          <input class="form-input" type="text" id="tx-category" list="category-list" placeholder="e.g. Food" required />
+          <input class="form-input" type="text" id="tx-category" list="category-list" placeholder="e.g. Food" />
           <datalist id="category-list"></datalist>
         </div>
 
@@ -366,6 +373,19 @@
       <div class="upload-feedback" id="upload-feedback"></div>
       <p class="upload-hint">New rows are <strong>merged</strong> — duplicates are skipped.</p>
       <p class="upload-hint">Required columns: <code>date, description, amount, category</code></p>
+    </div>
+  </div>
+
+  <!-- ── Manage Categories modal ─────────────────────────────────────────────── -->
+  <div class="modal-overlay" id="manage-cat-modal" hidden>
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3 class="modal-title">Manage Categories</h3>
+        <button class="modal-close" id="manage-cat-close" aria-label="Close">&#x2715;</button>
+      </div>
+      <div id="manage-cat-content" class="manage-cat-content">
+        <p style="color:var(--muted);text-align:center;padding:20px">Loading…</p>
+      </div>
     </div>
   </div>
 
