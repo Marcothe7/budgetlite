@@ -1,19 +1,20 @@
 const express = require('express');
-const fs      = require('fs');
-const path    = require('path');
 const multer  = require('multer');
 const config  = require('../config/app.config');
+const { parseCSVBuffer } = require('../services/csvService');
 const {
-  readTransactions, parseCSVBuffer, appendTransaction,
-  deleteTransaction, updateTransaction, mergeTransactions, writeCsv, CSV_PATH,
-} = require('../services/csvService');
+  readTransactions, appendTransaction, deleteTransaction,
+  updateTransaction, mergeTransactions, renameCategory,
+  readBudgets, writeBudgets,
+} = require('../services/supabaseService');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-const BUDGETS_PATH = path.join(__dirname, '..', '..', 'data', 'budgets.json');
-
 const COLOR_PALETTE = config.colorPalette;
+
+// Mount Telegram bot router
+router.use('/telegram', require('./telegram'));
 
 function categoryColor(name) {
   let hash = 0;
@@ -41,16 +42,6 @@ function getPrevMonth(monthStr) {
 function handleError(res, err) {
   console.error(err.message);
   res.status(500).json({ error: err.message });
-}
-
-function readBudgets() {
-  if (!fs.existsSync(BUDGETS_PATH)) return {};
-  try { return JSON.parse(fs.readFileSync(BUDGETS_PATH, 'utf-8')); }
-  catch { return {}; }
-}
-
-function writeBudgets(data) {
-  fs.writeFileSync(BUDGETS_PATH, JSON.stringify(data, null, 2), 'utf-8');
 }
 
 // ── GET /api/months ───────────────────────────────────────────────────────────
@@ -162,15 +153,15 @@ router.post('/transactions', async (req, res) => {
   const amt = parseFloat(amount);
   if (isNaN(amt)) return res.status(400).json({ error: 'amount must be a number.' });
   try {
-    appendTransaction({ date, description, amount: amt, category, type, recurring: !!recurring });
+    await appendTransaction({ date, description, amount: amt, category, type, recurring: !!recurring });
     res.json({ success: true });
   } catch (err) { handleError(res, err); }
 });
 
 // ── DELETE /api/transactions/:id ──────────────────────────────────────────────
 router.delete('/transactions/:id', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ error: 'Invalid id.' });
+  const id = req.params.id;
+  if (!id) return res.status(400).json({ error: 'Invalid id.' });
   try {
     await deleteTransaction(id);
     res.json({ success: true });
@@ -179,8 +170,8 @@ router.delete('/transactions/:id', async (req, res) => {
 
 // ── PUT /api/transactions/:id ─────────────────────────────────────────────────
 router.put('/transactions/:id', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ error: 'Invalid id.' });
+  const id = req.params.id;
+  if (!id) return res.status(400).json({ error: 'Invalid id.' });
   const { date, description, amount, category, type = 'expense', recurring = false } = req.body || {};
   if (!date || !description || !category) {
     return res.status(400).json({ error: 'date, description, and category are required.' });
@@ -194,18 +185,20 @@ router.put('/transactions/:id', async (req, res) => {
 });
 
 // ── GET /api/budgets ──────────────────────────────────────────────────────────
-router.get('/budgets', (req, res) => {
-  res.json(readBudgets());
+router.get('/budgets', async (req, res) => {
+  try {
+    res.json(await readBudgets());
+  } catch (err) { handleError(res, err); }
 });
 
 // ── POST /api/budgets ─────────────────────────────────────────────────────────
-router.post('/budgets', (req, res) => {
+router.post('/budgets', async (req, res) => {
   const data = req.body;
   if (typeof data !== 'object' || Array.isArray(data)) {
     return res.status(400).json({ error: 'Expected an object { category: amount }' });
   }
   try {
-    writeBudgets(data);
+    await writeBudgets(data);
     res.json({ success: true });
   } catch (err) { handleError(res, err); }
 });
@@ -244,8 +237,7 @@ router.put('/categories/rename', async (req, res) => {
   const { from, to } = req.body || {};
   if (!from || !to) return res.status(400).json({ error: 'from and to are required.' });
   try {
-    const all = await readTransactions();
-    writeCsv(all.map(t => t.category === from ? { ...t, category: to } : t));
+    await renameCategory(from, to);
     res.json({ ok: true });
   } catch (err) { handleError(res, err); }
 });
