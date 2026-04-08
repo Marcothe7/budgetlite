@@ -31,14 +31,13 @@ router.get('/setup', async (req, res) => {
 // ── Webhook receiver ──────────────────────────────────────────────────────────
 
 router.post('/', async (req, res) => {
-  res.sendStatus(200); // always respond immediately
-
   const update  = req.body || {};
   const message = update.message || update.edited_message;
-  if (!message) return;
+
+  if (!message) return res.sendStatus(200);
 
   const chatId = message.chat.id;
-  if (!isAllowed(chatId)) return;
+  if (!isAllowed(chatId)) return res.sendStatus(200);
 
   try {
     if (message.document) {
@@ -50,6 +49,10 @@ router.post('/', async (req, res) => {
     console.error('שגיאת בוט:', err.message);
     await sendWithKeyboard(chatId, `שגיאה: ${err.message}`).catch(() => {});
   }
+
+  // Send 200 AFTER processing — Vercel kills the function on response,
+  // so we must finish all async work before acknowledging Telegram.
+  res.sendStatus(200);
 });
 
 // ── Main text dispatcher ──────────────────────────────────────────────────────
