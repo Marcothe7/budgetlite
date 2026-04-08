@@ -8,7 +8,7 @@
  */
 module.exports = {
   appName:  process.env.APP_NAME  || 'BudgetLite',
-  currency: process.env.CURRENCY  || '$',
+  currency: process.env.CURRENCY  || '₪',
   port:     parseInt(process.env.PORT, 10) || 3000,
 
   // ── Category color palette ────────────────────────────────────────────────

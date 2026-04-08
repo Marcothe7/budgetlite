@@ -1,24 +1,22 @@
 const express = require('express');
-const { parseMessage } = require('../services/telegramParser');
-const { sendMessage, getFile, downloadFile, setWebhook } = require('../services/telegramService');
+const { parseMessage, parseDate, resolveCategory } = require('../services/telegramParser');
+const { sendWithKeyboard, sendReply, getFile, downloadFile, setWebhook } = require('../services/telegramService');
+const { getState, setState, clearState } = require('../services/botStateService');
 const { parseCSVBuffer } = require('../services/csvService');
-const {
-  readTransactions, appendTransaction, mergeTransactions, clearAllTransactions,
-} = require('../services/supabaseService');
+const { readTransactions, appendTransaction, mergeTransactions, clearAllTransactions } = require('../services/supabaseService');
 const config = require('../config/app.config');
 
 const router = express.Router();
 
-// ── Security gate helper ──────────────────────────────────────────────────────
+// ── Security gate ─────────────────────────────────────────────────────────────
 
 function isAllowed(chatId) {
   const allowed = process.env.TELEGRAM_CHAT_ID;
-  if (!allowed) return false; // deny all if env var not set
+  if (!allowed) return false;
   return String(chatId) === String(allowed);
 }
 
-// ── One-time webhook registration ─────────────────────────────────────────────
-// Visit GET /api/telegram/setup once after deploying to register the webhook URL.
+// ── Webhook setup (call once after deploy) ────────────────────────────────────
 
 router.get('/setup', async (req, res) => {
   try {
@@ -33,8 +31,7 @@ router.get('/setup', async (req, res) => {
 // ── Webhook receiver ──────────────────────────────────────────────────────────
 
 router.post('/', async (req, res) => {
-  // Always respond 200 immediately so Telegram doesn't retry
-  res.sendStatus(200);
+  res.sendStatus(200); // always respond immediately
 
   const update  = req.body || {};
   const message = update.message || update.edited_message;
@@ -50,40 +47,151 @@ router.post('/', async (req, res) => {
       await handleText(message.text, chatId);
     }
   } catch (err) {
-    console.error('Telegram handler error:', err.message);
-    await sendMessage(chatId, `Error: ${err.message}`).catch(() => {});
+    console.error('שגיאת בוט:', err.message);
+    await sendWithKeyboard(chatId, `שגיאה: ${err.message}`).catch(() => {});
   }
 });
 
-// ── Text dispatcher ───────────────────────────────────────────────────────────
+// ── Main text dispatcher ──────────────────────────────────────────────────────
 
 async function handleText(text, chatId) {
-  const parsed = parseMessage(text);
+  const session = await getState(chatId);
 
+  // Active conversation flows take priority
+  switch (session.state) {
+    case 'expense_details': return handleExpenseDetails(text, chatId);
+    case 'expense_date':    return handleExpenseDate(text, chatId, session.data);
+    case 'income_details':  return handleIncomeDetails(text, chatId);
+    case 'income_date':     return handleIncomeDate(text, chatId, session.data);
+  }
+
+  // Menu buttons
+  switch (text.trim()) {
+    case 'הוצאה 💸':             return startExpenseFlow(chatId);
+    case 'הכנסה 💰':             return startIncomeFlow(chatId);
+    case 'יתרה 📊':              return handleBalance(chatId);
+    case 'עסקאות אחרונות 📋':   return handleList(chatId);
+  }
+
+  // Slash commands
+  const parsed = parseMessage(text);
   if (parsed.type === 'command') {
     switch (parsed.command) {
+      case '/start':
+      case '/help':    return handleHelp(chatId);
       case '/balance': return handleBalance(chatId);
       case '/list':    return handleList(chatId);
       case '/clear':   return handleClear(parsed.args, chatId);
-      case '/add':     return handleAdd(parsed.args, 'expense', chatId);
-      case '/income':  return handleAdd(parsed.args, 'income', chatId);
-      case '/start':
-      case '/help':    return handleHelp(chatId);
       default:
-        return sendMessage(chatId, `Unknown command. Type /help for usage.`);
+        return sendWithKeyboard(chatId, 'פקודה לא מוכרת. השתמש בכפתורים למטה 👇');
     }
   }
 
-  if (parsed.type === 'expense' || parsed.type === 'income') {
-    return handleSmartEntry(parsed, chatId);
-  }
+  // Unknown input while idle
+  await sendWithKeyboard(chatId, 'לא הבנתי. השתמש בכפתורים למטה 👇');
+}
 
-  return sendMessage(chatId,
-    `I didn't understand that.\n\nTry: <code>150 food lunch</code>\nOr type /help`
+// ── Expense flow ──────────────────────────────────────────────────────────────
+
+async function startExpenseFlow(chatId) {
+  await setState(chatId, 'expense_details');
+  await sendReply(chatId,
+    'כמה הוצאת? שלח: <code>סכום קטגוריה תיאור</code>\n' +
+    'דוגמה: <code>150 אוכל קפה</code>'
   );
 }
 
-// ── Command handlers ──────────────────────────────────────────────────────────
+async function handleExpenseDetails(text, chatId) {
+  const tokens = text.trim().replace(/^[₪$€£]/, '').replace(/,/g, '').split(/\s+/);
+  const amount = parseFloat(tokens[0]);
+
+  if (isNaN(amount) || amount <= 0) {
+    return sendReply(chatId,
+      'לא הצלחתי להבין את הסכום 😕\nנסה שוב: <code>150 אוכל קפה</code>'
+    );
+  }
+
+  const category    = resolveCategory(tokens[1] || '');
+  const description = tokens.slice(2).join(' ') || tokens[1] || category;
+
+  await setState(chatId, 'expense_date', { amount, category, description });
+  await sendReply(chatId,
+    'מה התאריך?\n' +
+    '• Enter / "היום" לתאריך היום\n' +
+    '• פורמט: <code>21.2</code> לתאריך ספציפי'
+  );
+}
+
+async function handleExpenseDate(text, chatId, data) {
+  const date = parseDate(text);
+  await clearState(chatId);
+  await appendTransaction({
+    date,
+    description: data.description,
+    amount:      data.amount,
+    category:    data.category,
+    type:        'expense',
+    recurring:   false,
+  });
+  const cur = config.currency;
+  await sendWithKeyboard(chatId,
+    `✅ נשמר!\n` +
+    `הוצאה: ${cur}${Number(data.amount).toFixed(2)} — ${data.description} [${data.category}]\n` +
+    `תאריך: ${formatDate(date)}`
+  );
+}
+
+// ── Income flow ───────────────────────────────────────────────────────────────
+
+async function startIncomeFlow(chatId) {
+  await setState(chatId, 'income_details');
+  await sendReply(chatId,
+    'כמה הכנסת? שלח: <code>סכום תיאור</code>\n' +
+    'דוגמה: <code>3500 משכורת</code>'
+  );
+}
+
+async function handleIncomeDetails(text, chatId) {
+  const tokens = text.trim().replace(/^[₪$€£]/, '').replace(/,/g, '').split(/\s+/);
+  const amount = parseFloat(tokens[0]);
+
+  if (isNaN(amount) || amount <= 0) {
+    return sendReply(chatId,
+      'לא הצלחתי להבין את הסכום 😕\nנסה שוב: <code>3500 משכורת</code>'
+    );
+  }
+
+  const description = tokens.slice(1).join(' ') || 'הכנסה';
+  const category    = resolveCategory(tokens[1] || 'משכורת');
+
+  await setState(chatId, 'income_date', { amount, category, description });
+  await sendReply(chatId,
+    'מה התאריך?\n' +
+    '• Enter / "היום" לתאריך היום\n' +
+    '• פורמט: <code>1.4</code> לתאריך ספציפי'
+  );
+}
+
+async function handleIncomeDate(text, chatId, data) {
+  const date = parseDate(text);
+  await clearState(chatId);
+  await appendTransaction({
+    date,
+    description: data.description,
+    amount:      data.amount,
+    category:    data.category,
+    type:        'income',
+    recurring:   false,
+  });
+  const cur = config.currency;
+  await sendWithKeyboard(chatId,
+    `✅ נשמר!\n` +
+    `הכנסה: ${cur}${Number(data.amount).toFixed(2)} — ${data.description}\n` +
+    `תאריך: ${formatDate(date)}`
+  );
+}
+
+// ── Balance ───────────────────────────────────────────────────────────────────
 
 async function handleBalance(chatId) {
   const now   = new Date();
@@ -95,16 +203,18 @@ async function handleBalance(chatId) {
   const income   = tx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expenses = tx.filter(t => t.type !== 'income').reduce((s, t) => s + t.amount, 0);
   const net      = income - expenses;
-  const sign     = net >= 0 ? '+' : '';
+  const netSign  = net >= 0 ? '+' : '';
 
-  await sendMessage(chatId,
-    `<b>Balance — ${month}</b>\n\n` +
-    `Income:   ${cur}${income.toFixed(2)}\n` +
-    `Expenses: ${cur}${expenses.toFixed(2)}\n` +
-    `Net:      ${sign}${cur}${Math.abs(net).toFixed(2)}\n` +
-    `Transactions: ${tx.length}`
+  await sendWithKeyboard(chatId,
+    `<b>📊 סיכום — ${hebrewMonth(now.getMonth())} ${now.getFullYear()}</b>\n\n` +
+    `💰 הכנסות:  ${cur}${income.toFixed(2)}\n` +
+    `💸 הוצאות:  ${cur}${expenses.toFixed(2)}\n` +
+    `📈 יתרה:    ${netSign}${cur}${Math.abs(net).toFixed(2)}\n\n` +
+    `עסקאות החודש: ${tx.length}`
   );
 }
+
+// ── Last transactions ─────────────────────────────────────────────────────────
 
 async function handleList(chatId) {
   const all  = await readTransactions();
@@ -112,96 +222,45 @@ async function handleList(chatId) {
   const cur  = config.currency;
 
   if (last.length === 0) {
-    return sendMessage(chatId, 'No transactions yet.');
+    return sendWithKeyboard(chatId, 'אין עסקאות עדיין 📭');
   }
 
   const lines = last.map(t => {
     const sign = t.type === 'income' ? '+' : '-';
-    return `${t.date}  ${sign}${cur}${Number(t.amount).toFixed(2)}  ${t.category}  ${t.description}`;
+    return `${formatDate(t.date)}  ${sign}${cur}${Number(t.amount).toFixed(2)}  ${t.description}`;
   });
 
-  await sendMessage(chatId,
-    `<b>Last ${last.length} transactions:</b>\n<pre>${lines.join('\n')}</pre>`
+  await sendWithKeyboard(chatId,
+    `<b>📋 10 עסקאות אחרונות:</b>\n<pre>${lines.join('\n')}</pre>`
   );
 }
+
+// ── Help ──────────────────────────────────────────────────────────────────────
+
+async function handleHelp(chatId) {
+  await sendWithKeyboard(chatId,
+    `<b>ברוך הבא לבוט התקציב 💼</b>\n\n` +
+    `השתמש בכפתורים למטה:\n\n` +
+    `<b>הוצאה 💸</b> — הוספת הוצאה\n` +
+    `<b>הכנסה 💰</b> — הוספת הכנסה\n` +
+    `<b>יתרה 📊</b> — סיכום חודש נוכחי\n` +
+    `<b>עסקאות אחרונות 📋</b> — 10 העסקאות האחרונות\n\n` +
+    `<b>ייבוא CSV:</b>\n` +
+    `שלח קובץ <code>.csv</code> לייבוא עסקאות בכמות גדולה`
+  );
+}
+
+// ── Clear all ─────────────────────────────────────────────────────────────────
 
 async function handleClear(args, chatId) {
   if (args[0] !== 'CONFIRM') {
-    return sendMessage(chatId,
-      '⚠️ This will delete <b>ALL</b> transactions.\n\nTo confirm, send:\n<code>/clear CONFIRM</code>'
+    return sendWithKeyboard(chatId,
+      '⚠️ פעולה זו תמחק את <b>כל</b> העסקאות!\n\n' +
+      'לאישור שלח:\n<code>/clear CONFIRM</code>'
     );
   }
   await clearAllTransactions();
-  await sendMessage(chatId, 'All transactions deleted.');
-}
-
-async function handleAdd(args, type, chatId) {
-  // /add 150 Food Grocery shopping  →  args = ['150', 'Food', 'Grocery', 'shopping']
-  if (args.length === 0) {
-    const example = type === 'income'
-      ? '/income 3500 Salary'
-      : '/add 150 Food Grocery shopping';
-    return sendMessage(chatId, `Usage: <code>${example}</code>`);
-  }
-
-  const amount = parseFloat(args[0].replace(/,/g, ''));
-  if (isNaN(amount) || amount <= 0) {
-    return sendMessage(chatId, 'First argument must be a positive number.');
-  }
-
-  const category    = args[1] || (type === 'income' ? 'Salary' : 'Uncategorized');
-  const description = args.slice(2).join(' ') || category;
-  const date        = new Date().toISOString().slice(0, 10);
-
-  await appendTransaction({ date, description, amount, category, type, recurring: false });
-
-  const cur = config.currency;
-  await sendMessage(chatId,
-    `Saved ${type === 'income' ? 'income' : 'expense'}: ` +
-    `${cur}${amount.toFixed(2)} — ${description} [${category}]`
-  );
-}
-
-async function handleSmartEntry(parsed, chatId) {
-  if (!parsed.amount) {
-    return sendMessage(chatId, 'Could not parse amount. Try: <code>150 food lunch</code>');
-  }
-
-  await appendTransaction({
-    date:        parsed.date,
-    description: parsed.description,
-    amount:      parsed.amount,
-    category:    parsed.category,
-    type:        parsed.type,
-    recurring:   false,
-  });
-
-  const cur  = config.currency;
-  const sign = parsed.type === 'income' ? '+' : '-';
-  await sendMessage(chatId,
-    `Saved: ${sign}${cur}${parsed.amount.toFixed(2)} — ${parsed.description} [${parsed.category}]`
-  );
-}
-
-async function handleHelp(chatId) {
-  const cur = config.currency;
-  await sendMessage(chatId,
-    `<b>BudgetLite Bot</b>\n\n` +
-    `<b>Quick add (just type):</b>\n` +
-    `<code>150 food lunch at cafe</code>\n` +
-    `<code>85.5 transport uber</code>\n` +
-    `<code>3500 salary</code>\n\n` +
-    `<b>Commands:</b>\n` +
-    `/balance — this month's summary\n` +
-    `/list — last 10 transactions\n` +
-    `/add ${cur}150 Food Grocery — add expense\n` +
-    `/income ${cur}3500 Salary — add income\n` +
-    `/clear CONFIRM — delete ALL transactions\n` +
-    `/help — show this message\n\n` +
-    `<b>Bulk import:</b>\n` +
-    `Send a <code>.csv</code> file to import many transactions at once.\n` +
-    `CSV columns: <code>date,description,amount,category</code>`
-  );
+  await sendWithKeyboard(chatId, '🗑️ כל העסקאות נמחקו.');
 }
 
 // ── CSV document handler ──────────────────────────────────────────────────────
@@ -210,26 +269,44 @@ async function handleDocument(message, chatId) {
   const doc = message.document;
 
   if (!doc.file_name.toLowerCase().endsWith('.csv')) {
-    return sendMessage(chatId, 'Please send a .csv file.');
+    return sendWithKeyboard(chatId, 'אנא שלח קובץ <code>.csv</code> בלבד.');
   }
 
-  await sendMessage(chatId, 'Importing CSV...');
+  await sendReply(chatId, '⏳ מייבא CSV...');
 
   const fileInfo = await getFile(doc.file_id);
   const buffer   = await downloadFile(fileInfo.file_path);
   const rows     = await parseCSVBuffer(buffer);
 
   if (rows.length === 0) {
-    return sendMessage(chatId,
-      'No valid rows found in the CSV.\n' +
-      'Required columns: <code>date, description, amount, category</code>'
+    return sendWithKeyboard(chatId,
+      'לא נמצאו שורות תקינות בקובץ ה-CSV.\n' +
+      'עמודות נדרשות: <code>date, description, amount, category</code>'
     );
   }
 
   const result = await mergeTransactions(rows);
-  await sendMessage(chatId,
-    `CSV imported.\nNew rows added: ${result.added}\nTotal transactions: ${result.total}`
+  await sendWithKeyboard(chatId,
+    `✅ CSV יובא בהצלחה!\n` +
+    `שורות חדשות: ${result.added}\n` +
+    `סה"כ עסקאות: ${result.total}`
   );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function hebrewMonth(m) {
+  const months = [
+    'ינואר','פברואר','מרץ','אפריל','מאי','יוני',
+    'יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר',
+  ];
+  return months[m];
+}
+
+/** Format YYYY-MM-DD → DD.MM.YYYY for Hebrew display */
+function formatDate(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
 }
 
 module.exports = router;
