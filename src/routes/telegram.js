@@ -57,8 +57,20 @@ router.post('/', async (req, res) => {
 
 // ── Main text dispatcher ──────────────────────────────────────────────────────
 
+const DATE_TIMEOUT_MS = 20 * 1000; // 20 seconds
+
 async function handleText(text, chatId) {
   const session = await getState(chatId);
+
+  // Auto-save with today if user ignored the date prompt for >20 seconds
+  if ((session.state === 'expense_date' || session.state === 'income_date') && session.updatedAt) {
+    const age = Date.now() - new Date(session.updatedAt).getTime();
+    if (age > DATE_TIMEOUT_MS) {
+      await autoSaveWithToday(session.state, session.data, chatId);
+      // Fall through to process the new message in idle mode
+      return handleIdleText(text, chatId);
+    }
+  }
 
   // Active conversation flows take priority
   switch (session.state) {
@@ -68,6 +80,10 @@ async function handleText(text, chatId) {
     case 'income_date':     return handleIncomeDate(text, chatId, session.data);
   }
 
+  return handleIdleText(text, chatId);
+}
+
+async function handleIdleText(text, chatId) {
   // Menu buttons
   switch (text.trim()) {
     case 'הוצאה 💸':             return startExpenseFlow(chatId);
@@ -92,6 +108,22 @@ async function handleText(text, chatId) {
 
   // Unknown input while idle
   await sendWithKeyboard(chatId, 'לא הבנתי. השתמש בכפתורים למטה 👇');
+}
+
+// Auto-save when user didn't answer the date prompt in time
+async function autoSaveWithToday(state, data, chatId) {
+  const date    = new Date().toISOString().slice(0, 10);
+  const type    = state === 'expense_date' ? 'expense' : 'income';
+  const typeHe  = type === 'expense' ? 'הוצאה' : 'הכנסה';
+  await clearState(chatId);
+  await appendTransaction({ date, description: data.description, amount: data.amount,
+    category: data.category, type, recurring: false });
+  const cur = config.currency;
+  await sendReply(chatId,
+    `⏱️ לא קיבלתי תאריך — שמרתי עם תאריך היום\n` +
+    `✅ ${typeHe}: ${cur}${Number(data.amount).toFixed(2)} — ${data.description} [${data.category}]\n` +
+    `תאריך: ${formatDate(date)}`
+  );
 }
 
 // ── Expense flow ──────────────────────────────────────────────────────────────

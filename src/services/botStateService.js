@@ -37,7 +37,7 @@ async function getState(chatId) {
     return { state: 'idle', data: {} };
   }
 
-  return { state: data.state, data: data.data || {} };
+  return { state: data.state, data: data.data || {}, updatedAt: data.updated_at };
 }
 
 /**
