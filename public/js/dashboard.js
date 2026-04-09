@@ -211,6 +211,8 @@ function updateSidebarBadge(categories, bud) {
   });
   const badge = document.getElementById('reports-badge');
   if (badge) badge.hidden = !over;
+  const mobileBadge = document.getElementById('mobile-reports-badge');
+  if (mobileBadge) mobileBadge.hidden = !over;
 }
 
 // ── Overview page ─────────────────────────────────────────────────────────────

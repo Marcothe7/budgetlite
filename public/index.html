@@ -392,6 +392,23 @@
   <!-- Toast notifications -->
   <div class="toast-container" id="toast-container"></div>
 
+  <!-- Mobile bottom navigation (visible only on ≤700px) -->
+  <nav class="mobile-nav" aria-label="Mobile navigation">
+    <a class="mobile-nav-item nav-item active" href="#" data-page="overview">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Overview
+    </a>
+    <a class="mobile-nav-item nav-item" href="#" data-page="transactions">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Transactions
+    </a>
+    <a class="mobile-nav-item nav-item" href="#" data-page="reports">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Reports
+      <span class="mobile-nav-badge" id="mobile-reports-badge" hidden></span>
+    </a>
+  </nav>
+
   <script src="/js/dashboard.js"></script>
 </body>
 </html>
