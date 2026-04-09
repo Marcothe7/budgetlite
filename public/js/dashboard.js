@@ -438,12 +438,12 @@ function initTransactionActions() {
     if (badge && !btn) {
       e.stopPropagation();
       const tr = badge.closest('tr');
-      if (tr) showCategoryDropdown(badge, parseInt(tr.dataset.id, 10));
+      if (tr) showCategoryDropdown(badge, tr.dataset.id);
       return;
     }
 
     if (!btn) return;
-    const id     = parseInt(btn.dataset.id, 10);
+    const id     = btn.dataset.id;
     const action = btn.dataset.action;
 
     if (action === 'delete') {
